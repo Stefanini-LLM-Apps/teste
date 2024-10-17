@@ -1,85 +1,74 @@
-name: Approval Check Workflow
+name: PR Approval Check
 
 on:
   pull_request:
-    branches:
-      - main  # Branch onde a verificação será aplicada
+    types: [opened, synchronize, reopened]
 
 jobs:
-  approval-check:
+  approval_check:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Set status to pending
-      uses: actions/github-script@v6
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const { context } = require("@actions/github");
-          const check_run_name = "Approval Status";
-          const response = await github.checks.create({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            name: check_run_name,
-            head_sha: context.payload.pull_request.head.sha,
-            status: "in_progress",
-            output: {
-              title: "Aguardando aprovação dos revisores",
-              summary: "Aguardando as aprovações necessárias para continuar."
-            }
-          });
-          return { check_run_id: response.data.id };
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Wait for approval
-      id: wait-for-approval
-      uses: actions/github-script@v6
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const waitForApproval = async () => {
+      - name: Check if PR is approved
+        id: approval_check
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { data: reviews } = await github.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+
+            const approvedReviews = reviews.filter(review => review.state === 'APPROVED');
             const requiredReviewers = ["rhsantos3"];  // Lista de aprovadores necessários
-            let isApproved = false;
+            const approvedBy = approvedReviews.map(review => review.user.login);
 
-            while (!isApproved) {
-              const { data: reviews } = await github.rest.pulls.listReviews({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.payload.pull_request.number,
-              });
+            if (requiredReviewers.every(reviewer => approvedBy.includes(reviewer))) {
+              return { approved: true };
+            } else {
+              return { approved: false };
+            }
 
-              const approvedReviews = reviews.filter(review => review.state === 'APPROVED');
-              const approvedBy = approvedReviews.map(review => review.user.login);
-
-              // Verificar se todos os revisores necessários aprovaram
-              isApproved = requiredReviewers.every(reviewer => approvedBy.includes(reviewer));
-
-              if (!isApproved) {
-                console.log("Aguardando aprovação...");
-                await new Promise(resolve => setTimeout(resolve, 60000));  // Espera 1 minuto antes de verificar novamente
+      - name: Create "Approval Status" check run
+        if: steps.approval_check.outputs.approved == 'false'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const check_run_name = "Approval Status";
+            const response = await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: check_run_name,
+              head_sha: context.payload.pull_request.head.sha,
+              status: "in_progress",
+              output: {
+                title: "Aguardando aprovação dos revisores",
+                summary: "Aguardando as aprovações necessárias para continuar."
               }
-            }
+            });
+            return { check_run_id: response.data.id };
 
-            return { success: true };
-          };
-
-          await waitForApproval();
-
-    - name: Set status to success when approved
-      if: steps.wait-for-approval.outputs.success == 'true'
-      uses: actions/github-script@v6
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const { context } = require("@actions/github");
-          const check_run_id = "${{ steps.wait-for-approval.outputs.check_run_id }}";
-          await github.checks.update({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            check_run_id: check_run_id,
-            status: "completed",
-            conclusion: "success",
-            output: {
-              title: "Aprovação recebida",
-              summary: "Todos os revisores obrigatórios aprovaram o PR."
-            }
-          });
+      - name: Mark check as complete if approved
+        if: steps.approval_check.outputs.approved == 'true'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const check_run_name = "Approval Status";
+            const response = await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: check_run_name,
+              head_sha: context.payload.pull_request.head.sha,
+              status: "completed",
+              conclusion: "success",
+              output: {
+                title: "Aprovação Concluída",
+                summary: "Aprovado por todos os revisores necessários."
+              }
+            });
