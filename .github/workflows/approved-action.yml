@@ -13,8 +13,9 @@ jobs:
       id: approvals
       uses: actions/github-script@v6
       with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}  # Certifique-se de passar o token de autenticação
         script: |
-          const { data: reviews } = await github.pulls.listReviews({
+          const { data: reviews } = await github.rest.pulls.listReviews({
             owner: context.repo.owner,
             repo: context.repo.repo,
             pull_number: context.payload.pull_request.number,
