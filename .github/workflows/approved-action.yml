@@ -1,0 +1,38 @@
+name: Approved Action Workflow
+
+on:
+  pull_request:
+    branches:
+      - main  # Branch específica onde a Action será executada após aprovação
+
+jobs:
+  check-approvals:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check if PR has been approved by the required reviewers
+      id: approvals
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const { data: reviews } = await github.pulls.listReviews({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.payload.pull_request.number,
+          });
+
+          const approvedReviews = reviews.filter(review => review.state === 'APPROVED');
+          
+          const requiredReviewers = ["rhsantos3"];  # Lista de aprovadores necessários
+          const approvedBy = approvedReviews.map(review => review.user.login);
+
+          if (requiredReviewers.every(reviewer => approvedBy.includes(reviewer))) {
+            return true;
+          } else {
+            throw new Error('PR has not been approved by all required reviewers.');
+          }
+
+    - name: Run the next steps if approved
+      if: steps.approvals.outputs.success == 'true'
+      run: |
+        echo "All required approvals are received. Running the next steps."
+        # Adicione aqui as etapas subsequentes
