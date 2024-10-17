@@ -22,13 +22,13 @@ jobs:
 
           const approvedReviews = reviews.filter(review => review.state === 'APPROVED');
           
-          const requiredReviewers = ["rhsantos3"];  # Lista de aprovadores necessários
+          const requiredReviewers = ["rhsantos3"];  // Lista de aprovadores necessários
           const approvedBy = approvedReviews.map(review => review.user.login);
 
           if (requiredReviewers.every(reviewer => approvedBy.includes(reviewer))) {
-            return true;
+            return { success: true };
           } else {
-            throw new Error('PR has not been approved by all required reviewers.');
+            return { success: false, message: 'PR has not been approved by all required reviewers.' };
           }
 
     - name: Run the next steps if approved
