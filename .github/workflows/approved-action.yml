@@ -3,38 +3,48 @@ name: Approved Action Workflow
 on:
   pull_request:
     branches:
-      - main  # Branch específica onde a Action será executada após aprovação
+      - main  # Branch específica onde a Action será executada
 
 jobs:
   check-approvals:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Check if PR has been approved by the required reviewers
-      id: approvals
+    - name: Wait for approval
+      id: wait-for-approval
       uses: actions/github-script@v6
       with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}  # Certifique-se de passar o token de autenticação
+        github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
-          const { data: reviews } = await github.rest.pulls.listReviews({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            pull_number: context.payload.pull_request.number,
-          });
+          const waitForApproval = async () => {
+            const requiredReviewers = ["rhsantos3"];  // Lista de aprovadores necessários
+            let isApproved = false;
 
-          const approvedReviews = reviews.filter(review => review.state === 'APPROVED');
-          
-          const requiredReviewers = ["rhsantos3"];  // Lista de aprovadores necessários
-          const approvedBy = approvedReviews.map(review => review.user.login);
+            while (!isApproved) {
+              const { data: reviews } = await github.rest.pulls.listReviews({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.pull_request.number,
+              });
 
-          if (requiredReviewers.every(reviewer => approvedBy.includes(reviewer))) {
+              const approvedReviews = reviews.filter(review => review.state === 'APPROVED');
+              const approvedBy = approvedReviews.map(review => review.user.login);
+
+              // Verificar se todos os revisores necessários aprovaram
+              isApproved = requiredReviewers.every(reviewer => approvedBy.includes(reviewer));
+
+              if (!isApproved) {
+                console.log("Aguardando aprovação...");
+                await new Promise(resolve => setTimeout(resolve, 60000));  // Espera 1 minuto antes de verificar novamente
+              }
+            }
+
             return { success: true };
-          } else {
-            return { success: false, message: 'PR has not been approved by all required reviewers.' };
-          }
+          };
+
+          await waitForApproval();
 
     - name: Run the next steps if approved
-      if: steps.approvals.outputs.success == 'true'
+      if: steps.wait-for-approval.outputs.success == 'true'
       run: |
         echo "All required approvals are received. Running the next steps."
         # Adicione aqui as etapas subsequentes
