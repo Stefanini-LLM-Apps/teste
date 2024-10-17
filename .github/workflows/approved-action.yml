@@ -8,6 +8,9 @@ on:
 jobs:
   check-approvals:
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
     steps:
     - name: Check if PR has been approved by the required reviewers
       id: approvals
