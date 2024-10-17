@@ -1,14 +1,35 @@
-name: Approved Action Workflow
+name: Approval Check Workflow
 
 on:
   pull_request:
     branches:
-      - main  # Branch específica onde a Action será executada
+      - main  # Branch onde a verificação será aplicada
 
 jobs:
-  check-approvals:
+  approval-check:
     runs-on: ubuntu-latest
+
     steps:
+    - name: Set status to pending
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const { context } = require("@actions/github");
+          const check_run_name = "Approval Status";
+          const response = await github.checks.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            name: check_run_name,
+            head_sha: context.payload.pull_request.head.sha,
+            status: "in_progress",
+            output: {
+              title: "Aguardando aprovação dos revisores",
+              summary: "Aguardando as aprovações necessárias para continuar."
+            }
+          });
+          return { check_run_id: response.data.id };
+
     - name: Wait for approval
       id: wait-for-approval
       uses: actions/github-script@v6
@@ -43,8 +64,22 @@ jobs:
 
           await waitForApproval();
 
-    - name: Run the next steps if approved
+    - name: Set status to success when approved
       if: steps.wait-for-approval.outputs.success == 'true'
-      run: |
-        echo "All required approvals are received. Running the next steps."
-        # Adicione aqui as etapas subsequentes
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const { context } = require("@actions/github");
+          const check_run_id = "${{ steps.wait-for-approval.outputs.check_run_id }}";
+          await github.checks.update({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            check_run_id: check_run_id,
+            status: "completed",
+            conclusion: "success",
+            output: {
+              title: "Aprovação recebida",
+              summary: "Todos os revisores obrigatórios aprovaram o PR."
+            }
+          });
